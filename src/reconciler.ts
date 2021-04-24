@@ -11,7 +11,7 @@ import {
 import { createElement, updateElement } from "./dom"
 import { resetCursor } from "./hook"
 import { scheduleWork, shouldYield, schedule } from "./scheduler"
-import { isArr, createText } from "./h"
+import { isArr, createText, recycleNode } from "./h"
 
 let currentFiber: IFiber
 let finish = null
@@ -90,13 +90,18 @@ const updateHook = <P = Attributes>(WIP: IFiber): void => {
     }
   }
   isStr(children) && (children = simpleVnode(children))
+
+  if (!isFn(children.type)) {
+    const vnode = (recycleNode(getParent(WIP)) as any)
+    WIP.kids = arrayfy(vnode.props.children)
+  }
   reconcileChildren(WIP, children)
 }
 
 const simpleVnode = (type: any, props?: any) =>
   isStr(type) ? createText(type as string) : isFn(type) ? type(props) : type
 
-const getParentNode = (WIP: IFiber): HTMLElement | undefined => {
+const getParent = (WIP: IFiber): HTMLElement | undefined => {
   while ((WIP = WIP.parent)) {
     if (!isFn(WIP.type)) return WIP.node
   }
@@ -111,11 +116,10 @@ const getBoundary = (WIP: IFiber, then): IFiber | undefined => {
 }
 
 const updateHost = (WIP: IFiber): void => {
-  WIP.parentNode = getParentNode(WIP) as any
-
   if (!WIP.node) {
     if (WIP.type === "svg") WIP.lane |= LANE.SVG
     WIP.node = createElement(WIP) as HTMLElementEx
+    WIP.parentNode = getParent(WIP) as any
   }
   reconcileChildren(WIP, WIP.props.children)
 }
@@ -129,6 +133,8 @@ const reconcileChildren = (WIP: any, children: FreNode): void => {
     bTail = bCh.length - 1,
     map = null,
     ch = Array(bCh.length)
+
+  console.log(aCh,bCh)
 
   while (aHead <= aTail && bHead <= bTail) {
     let c = null
@@ -212,7 +218,7 @@ const reconcileChildren = (WIP: any, children: FreNode): void => {
 }
 
 function clone(a, b) {
-  a.lastProps = b.props
+  a.oldProps = b.props
   a.node = b.node
   a.kids = b.kids
   a.hooks = b.hooks
@@ -287,7 +293,7 @@ const commit = (fiber: IFiber): void => {
     return
   }
   if (lane & LANE.UPDATE) {
-    updateElement(node, fiber.lastProps || {}, fiber.props)
+    updateElement(node, fiber.oldProps || {}, fiber.props)
   }
   if (lane & LANE.INSERT) {
     parentNode.insertBefore(fiber.node, fiber.after?.node)

@@ -30,3 +30,7 @@ export function ErrorBoundary(props) {
   (ErrorBoundary as any).lane = LANE.Error
   return props.children
 }
+
+export function Fragment(props) {
+  return props.children
+}

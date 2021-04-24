@@ -1,4 +1,4 @@
-export { h, Fragment, h as createElement } from "./h"
+export { h, h as createElement } from "./h"
 export { render } from "./reconciler"
 export {
   useState,
@@ -11,5 +11,5 @@ export {
   useLayout as useLayoutEffect,
 } from "./hook"
 export { shouldYield } from "./scheduler"
-export { lazy, Suspense, ErrorBoundary } from "./boundary"
+export { lazy, Suspense, ErrorBoundary, Fragment } from "./boundary"
 export * from "./type"

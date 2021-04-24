@@ -49,7 +49,7 @@ export interface IFiber<P extends Attributes = any> {
   done?: () => void
   ref: IRef
   hooks: IHook
-  lastProps: P
+  oldProps: P
   after: any
   props: P
   lane: number
