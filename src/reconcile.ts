@@ -25,6 +25,8 @@ export const enum LANE {
   REMOVE = 1 << 3,
   SVG = 1 << 4,
   DIRTY = 1 << 5,
+  SUSPEND = 1 << 6,
+  FALLBACK = 1 << 7
 }
 
 export const render = (vnode: FreElement, node: Node, config?: any): void => {
@@ -37,8 +39,13 @@ export const render = (vnode: FreElement, node: Node, config?: any): void => {
 }
 
 export const update = (fiber?: IFiber) => {
+  let isSuspend = fiber.lane & LANE.SUSPEND
   if (fiber && !(fiber.lane & LANE.DIRTY)) {
     fiber.lane = LANE.UPDATE | LANE.DIRTY
+    if (isSuspend) {
+      fiber.lane |= LANE.SUSPEND
+    }
+    fiber.laziness = []
     schedule(() => {
       fiber.sibling = null
       effect = fiber
@@ -60,6 +67,7 @@ const reconcile = (WIP?: IFiber): boolean => {
 }
 
 const capture = (WIP: IFiber): IFiber | undefined => {
+  WIP.laziness = []
   isFn(WIP.type) ? updateHook(WIP) : updateHost(WIP)
   if (WIP.child) return WIP.child
   while (WIP) {
@@ -76,11 +84,11 @@ const capture = (WIP: IFiber): IFiber | undefined => {
 
 const bubble = (WIP) => {
   if (isFn(WIP.type)) {
-    let kid = WIP.child
-    while (isFn(kid.type)) {
-      kid = kid.child
+    if (WIP.parent) {
+      WIP.parent.laziness = WIP.parent.laziness.concat(WIP.laziness)
     }
-    if (kid && WIP.sibling) {
+    let kid = getKid(WIP)
+    if (kid) {
       kid.s = WIP.sibling
       kid.lane |= WIP.lane
     }
@@ -92,17 +100,40 @@ const bubble = (WIP) => {
   }
 }
 
+const isSuspense = (vnode) => vnode.type.name === 'Suspense'
+
 const updateHook = <P = Attributes>(WIP: IFiber): void => {
   resetCursor()
   currentFiber = WIP
-  let children = (WIP.type as FC<P>)(WIP.props)
-  isStr(children) && (children = simpleVnode(children))
+  let children = (WIP.type as FC<P>)(WIP.props) as any
+  if (isSuspense(WIP)) {
+    if ((WIP.lane & LANE.SUSPEND) === 0) {
+      const c = simpleVnode(WIP.props.fallback)
+      updateLazy(WIP, children)
+      children = [c]
+    }
+  }
+  children = simpleVnode(children)
   diffKids(WIP, children)
+}
+
+function updateLazy(WIP, children) {
+  arrayfy(children).forEach(c => {
+    try {
+      c.type(c.props)
+    } catch (e) {
+      if (e && isFn(e.then)) {
+        WIP.laziness.push(e)
+      }
+    }
+    if (c.props.children) {
+      updateLazy(WIP, c.props.children)
+    }
+  })
 }
 
 const updateHost = (WIP: IFiber): void => {
   WIP.parentNode = getParentNode(WIP) as any
-
   if (!WIP.node) {
     if (WIP.type === "svg") WIP.lane |= LANE.SVG
     WIP.node = createElement(WIP) as HTMLElementEx
@@ -110,8 +141,9 @@ const updateHost = (WIP: IFiber): void => {
   diffKids(WIP, WIP.props.children)
 }
 
-const simpleVnode = (type: any, props?: any) =>
-  isStr(type) ? createText(type as string) : isFn(type) ? type(props) : type
+const simpleVnode = (type: any) => {
+  return isStr(type) ? createText(type as string) : type
+}
 
 const getParentNode = (WIP: IFiber): HTMLElement | undefined => {
   while ((WIP = WIP.parent)) {
@@ -213,11 +245,19 @@ function clone(a, b, lane, WIP, i) {
   linke(b, WIP, i)
 }
 
+
 function invokeHooks(fiber) {
-  const { hooks } = fiber
+  const { hooks, laziness } = fiber
   if (hooks) {
     side(hooks.layout)
     startTransition(() => side(hooks.effect))
+  }
+  if (laziness.length > 0) {
+    if (isSuspense(fiber)) {
+      console.log(fiber)
+      fiber.lane |= LANE.SUSPEND
+      Promise.all(laziness).then(() => update(fiber))
+    }
   }
 }
 

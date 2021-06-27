@@ -1,4 +1,4 @@
-export { h, Fragment, h as createElement } from "./h"
+export { h, Fragment, h as createElement, Suspense, lazy } from "./h"
 export { render } from "./reconcile"
 export {
   useState,
